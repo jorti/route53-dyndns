@@ -1,0 +1,60 @@
+# Sources of the public IPv4 address and/or IPv6 delegated prefix
+sources:
+  ipv4:
+    # There are 3 methods of getting the IPv4 address:
+
+    # From a network interface:
+    #
+    # type: interface
+    # interface: eth0
+
+    # Reading it from a file:
+    #
+    # type: file
+    # file: /run/ip-address
+
+    # From a URL:
+    #
+    # type: url
+    # url: https://ifconfig.me
+
+  ipv6:
+    # We can also get the IPv6 delegated prefix with one of these methods:
+
+    # From a network interface. Note the we need to indicate the lenght of
+    # the delegated prefix:
+    #
+    # type: interface
+    # interface: eth1
+    # prefixlen: 56
+
+    # Reading it from a file:
+    #
+    # type: file
+    # file: /run/ipv6-delegated-prefix
+
+    # From a URL:
+    #
+    # type: url
+    # url: https://ifconfig.co
+    # prefixlen: 56
+
+
+# DNS records to update
+dns_records:
+
+  www.example.com:
+    ipv4: yes           # Create A record
+    ipv6: yes           # Create AAAA record
+    ipv6_subnet_hint: 2 # Use a hint to calculate the IPv6 prefix
+    ipv6_host_addr: 1   # Host part in IPv6 address
+
+  example.com:
+    ipv4: yes
+    ipv6: yes
+    ipv6_subnet_interface: eth2 # Get the IPv6 subnet from a interface
+    ipv6_host_addr: 1           # host part in IPv6 address
+
+  mx.example.com:
+    ipv4: yes
+    ipv6: no   # AAAA record disabled
