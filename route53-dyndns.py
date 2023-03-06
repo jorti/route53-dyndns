@@ -32,7 +32,8 @@ from typing import Optional
 
 def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
     if source["type"] == "interface":
-        addresses = netifaces.ifaddresses(source["interface"])[netifaces.AF_INET]
+        addresses = netifaces.ifaddresses(source["interface"])[
+            netifaces.AF_INET]
         return ip_address(addresses[0]["addr"])
     elif source["type"] == "file":
         try:
@@ -40,9 +41,11 @@ def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
                 content = f.readline().rstrip()
             return ip_address(content)
         except OSError as e:
-            logging.error(f"Error reading IPv4 address from file {source['file']}: {e}")
+            logging.error(
+                f"Error reading IPv4 address from file {source['file']}: {e}")
     elif source["type"] == "url":
-        curl_cmd = [shutil.which('curl'), '--ipv4', '--silent', '--max-time', '10', source["url"]]
+        curl_cmd = [shutil.which('curl'), '--ipv4',
+                    '--silent', '--max-time', '10', source["url"]]
         try:
             logging.debug(f"Running command {curl_cmd}")
             output = check_output(curl_cmd)
@@ -59,28 +62,34 @@ def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
 def get_ipv6_prefix(source: dict) -> Optional[IPv6Network]:
     """ Returns a discovered IPv6 prefix or None"""
     if source["type"] == "interface":
-        addresses = netifaces.ifaddresses(source["interface"])[netifaces.AF_INET6]
+        addresses = netifaces.ifaddresses(source["interface"])[
+            netifaces.AF_INET6]
         for address in addresses:
             if "prefixlen" in source.keys():
                 prefix = str(source["prefixlen"])
             else:
                 prefix = address["netmask"].split('/')[1]
-            ipv6_network = ip_network(address["addr"] + '/' + prefix, strict=False)
+            ipv6_network = ip_network(
+                address["addr"] + '/' + prefix, strict=False)
             if ipv6_network.is_global and ipv6_network.prefixlen <= 64:
                 return ipv6_network
-        logging.error(f"Error reading IPv6 prefix from network interface {source['interface']}")
+        logging.error(
+            f"Error reading IPv6 prefix from network interface {source['interface']}")
     elif source["type"] == "file":
         try:
             with open(source["file"], "r") as f:
                 content = f.readline().rstrip()
             return ip_network(content)
         except OSError as e:
-            logging.error(f"Error reading IPv6 prefix from file {source['file']}: {e}")
+            logging.error(
+                f"Error reading IPv6 prefix from file {source['file']}: {e}")
     elif source["type"] == "url":
         if "prefixlen" not in source.keys():
-            logging.error("You need to specify 'prefixlen' for the IPv6 URL method")
+            logging.error(
+                "You need to specify 'prefixlen' for the IPv6 URL method")
             sys.exit(1)
-        curl_cmd = [shutil.which('curl'), '--ipv6', '--silent', '--max-time', '10', source["url"]]
+        curl_cmd = [shutil.which('curl'), '--ipv6',
+                    '--silent', '--max-time', '10', source["url"]]
         try:
             logging.debug(f"Running command {curl_cmd}")
             output = check_output(curl_cmd).decode('utf-8')
@@ -96,21 +105,26 @@ def get_ipv6_prefix(source: dict) -> Optional[IPv6Network]:
 
 def calculate_ipv6_address(prefix: IPv6Network, dns_record_conf: dict) -> Optional[IPv6Address]:
     if "ipv6_subnet_interface" in dns_record_conf.keys():
-        target_subnet = get_ipv6_prefix({"type": "interface", "interface": dns_record_conf["ipv6_subnet_interface"]})
+        target_subnet = get_ipv6_prefix(
+            {"type": "interface", "interface": dns_record_conf["ipv6_subnet_interface"]})
         if not target_subnet:
-            logging.error(f"Cannot calculate IPv6 address using interface {dns_record_conf['ipv6_subnet_interface']}")
+            logging.error(
+                f"Cannot calculate IPv6 address using interface {dns_record_conf['ipv6_subnet_interface']}")
             return
         return target_subnet[int(str(dns_record_conf["ipv6_host_addr"]), 16)]
     elif "ipv6_subnet_hint" in dns_record_conf.keys():
         if prefix.prefixlen < 64:
             subnets = list(prefix.subnets(new_prefix=64))
-            target_subnet = subnets[int(str(dns_record_conf["ipv6_subnet_hint"]), 16)]
+            target_subnet = subnets[int(
+                str(dns_record_conf["ipv6_subnet_hint"]), 16)]
         else:
-            logging.warning("IPv6 Prefix length is {}, ignoring ipv6_subnet_hint".format(prefix.prefixlen))
+            logging.warning(
+                "IPv6 Prefix length is {}, ignoring ipv6_subnet_hint".format(prefix.prefixlen))
             target_subnet = prefix
         return target_subnet[int(str(dns_record_conf["ipv6_host_addr"]), 16)]
     else:
-        logging.error(f"Cannot calculate IPv6 address with dns_record_conf={dns_record_conf}")
+        logging.error(
+            f"Cannot calculate IPv6 address with dns_record_conf={dns_record_conf}")
 
 
 def finish(_signo, _stack_frame):
@@ -158,12 +172,15 @@ def create_route53_change_batch(changes):
 
 
 parser = argparse.ArgumentParser(description='Route 53 DynDNS')
-parser.add_argument("--conf-file", "-c", default="route53-dyndns.yml", help="Configuration file")
+parser.add_argument("--conf-file", "-c",
+                    default="route53-dyndns.yml", help="Configuration file")
 parser.add_argument("--aws-conf-file", help="AWS configuration file")
-parser.add_argument("--ttl", default=60, type=int, help="TTL for DNS records (default: 60 seconds)")
+parser.add_argument("--ttl", default=60, type=int,
+                    help="TTL for DNS records (default: 60 seconds)")
 parser.add_argument("--log-level", default="INFO", help="Log level",
                     choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-parser.add_argument("--delay", "-d", default=300, type=int, help="Delay between runs (in seconds)")
+parser.add_argument("--delay", "-d", default=300, type=int,
+                    help="Delay between runs (in seconds)")
 args = parser.parse_args()
 log_numeric_level = getattr(logging, args.log_level.upper(), None)
 logging.basicConfig(level=log_numeric_level)
@@ -174,7 +191,8 @@ try:
     with open(args.conf_file, 'r') as conf_file:
         conf = yaml.load(conf_file, Loader=yaml.SafeLoader)
 except OSError as e:
-    logging.critical(f"Error opening configuration file '{args.conf_file}': {e}")
+    logging.critical(
+        f"Error opening configuration file '{args.conf_file}': {e}")
     sys.exit(1)
 
 # Config file validations
@@ -245,7 +263,8 @@ while True:
     # Get current state
     current_records = {}
     for domain in domain_ids:
-        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_ids[domain])
+        resource_record_sets = route53.list_resource_record_sets(
+            HostedZoneId=domain_ids[domain])
         if resource_record_sets['IsTruncated']:
             logging.warning("Truncated list of resource records")
         current_records[domain] = resource_record_sets['ResourceRecordSets']
@@ -255,7 +274,8 @@ while True:
     for domain in domain_ids:
         record_changes[domain] = []
         for desired_record in desired_records[domain]:
-            exists, updated = needs_update(desired_record, current_records[domain])
+            exists, updated = needs_update(
+                desired_record, current_records[domain])
             logging.debug(
                 f"{desired_record['type']} Record '{desired_record['name']}' checked with results: exists={exists} updated={updated}")
             if exists and updated:
@@ -276,8 +296,10 @@ while True:
     # Apply changes
     for domain in domain_ids:
         if record_changes[domain]:
+            logging.info(f"Applying changes for domain {domain} ...")
             change_batch = create_route53_change_batch(record_changes[domain])
-            result = route53.change_resource_record_sets(HostedZoneId=domain_ids[domain], ChangeBatch=change_batch)
+            result = route53.change_resource_record_sets(
+                HostedZoneId=domain_ids[domain], ChangeBatch=change_batch)
 
     logging.info(f"Sleeping for {args.delay} seconds...")
     sleep(args.delay)
