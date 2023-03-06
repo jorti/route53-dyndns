@@ -21,7 +21,6 @@ import argparse
 import yaml
 import os
 import boto3
-from botocore.config import Config
 from ipaddress import IPv4Address, IPv6Address, IPv6Network, ip_address, ip_network
 import netifaces
 from subprocess import check_output, SubprocessError

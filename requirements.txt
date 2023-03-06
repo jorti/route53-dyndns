@@ -1,0 +1,3 @@
+boto3==1.26.84
+netifaces==0.11.0
+PyYAML==6.0
