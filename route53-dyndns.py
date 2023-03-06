@@ -171,6 +171,28 @@ def create_route53_change_batch(changes):
             'Changes': changes}
 
 
+def get_route53_domain_records(domain_id, **kwargs):
+    if 'StartRecordName' in kwargs and 'StartRecordType' in kwargs and 'StartRecordIdentifier' not in kwargs:
+        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id,
+                                                                 StartRecordName=kwargs['StartRecordName'],
+                                                                 StartRecordType=kwargs['StartRecordType'])
+    elif 'StartRecordName' in kwargs and 'StartRecordType' in kwargs and 'StartRecordIdentifier' in kwargs:
+        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id,
+                                                                 StartRecordName=kwargs['StartRecordName'],
+                                                                 StartRecordType=kwargs['StartRecordType'],
+                                                                 StartRecordIdentifier=kwargs['StartRecordIdentifier'])
+    else:
+        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id)
+    records = resource_record_sets['ResourceRecordSets']
+    if resource_record_sets['IsTruncated']:
+        next_query_args = {'StartRecordName': resource_record_sets['NextRecordName'],
+                           'StartRecordType': resource_record_sets['NextRecordType']}
+        if 'StartRecordIdentifier' in resource_record_sets:
+            next_query_args['StartRecordIdentifier'] = resource_record_sets['NextRecordIdentifier']
+        records = records + get_route53_domain_records(domain_id=domain_id, **next_query_args)
+    return records
+
+
 parser = argparse.ArgumentParser(description='Route 53 DynDNS')
 parser.add_argument("--conf-file", "-c",
                     default="route53-dyndns.yml", help="Configuration file")
@@ -263,11 +285,7 @@ while True:
     # Get current state
     current_records = {}
     for domain in domain_ids:
-        resource_record_sets = route53.list_resource_record_sets(
-            HostedZoneId=domain_ids[domain])
-        if resource_record_sets['IsTruncated']:
-            logging.warning("Truncated list of resource records")
-        current_records[domain] = resource_record_sets['ResourceRecordSets']
+        current_records[domain] = get_route53_domain_records(domain_id=domain_ids[domain])
 
     # Prepare changes
     record_changes = {}
