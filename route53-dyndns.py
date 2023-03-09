@@ -28,6 +28,7 @@ from time import sleep
 from signal import signal, SIGINT, SIGTERM
 import logging
 from typing import Optional
+from datetime import datetime
 
 
 def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
@@ -245,6 +246,7 @@ for domain in domains:
 
 # main loop
 while True:
+    logging.info(f"{datetime.now()} Starting IP discovery...")
     # Discover IPv4 and IPv6 addresses
     if "ipv4" in conf["sources"]:
         logging.debug("Trying to discover IPv4 address...")

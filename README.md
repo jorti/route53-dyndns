@@ -20,7 +20,7 @@ an alternate location using the `--aws-conf-file` option.
 
 The needed AWS permissions are:
 
-~~~
+```json
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -39,4 +39,4 @@ The needed AWS permissions are:
         }
     ]
 }
-~~~
+```
