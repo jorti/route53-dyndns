@@ -301,13 +301,12 @@ while True:
             if exists and updated:
                 logging.info("OK: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
                                                       desired_record['type'], desired_record['value']))
-                continue
-            if not exists:
+            elif not exists:
                 logging.info("Adding: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
                                                           desired_record['type'], desired_record['value']))
                 change = create_route53_change('CREATE', desired_record)
                 record_changes[domain].append(change)
-            if not updated:
+            elif not updated:
                 logging.info("Changing: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
                                                             desired_record['type'], desired_record['value']))
                 change = create_route53_change('UPSERT', desired_record)
