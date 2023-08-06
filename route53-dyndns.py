@@ -202,8 +202,6 @@ parser.add_argument("--ttl", default=60, type=int,
                     help="TTL for DNS records (default: 60 seconds)")
 parser.add_argument("--log-level", default="INFO", help="Log level",
                     choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-parser.add_argument("--delay", "-d", default=300, type=int,
-                    help="Delay between runs (in seconds)")
 args = parser.parse_args()
 log_numeric_level = getattr(logging, args.log_level.upper(), None)
 logging.basicConfig(level=log_numeric_level)
@@ -244,81 +242,79 @@ for domain in domains:
     hosted_zones = route53.list_hosted_zones_by_name(DNSName=domain)
     domain_ids[domain] = hosted_zones['HostedZones'][0]['Id']
 
-# main loop
-while True:
-    logging.info(f"{datetime.now()} Starting IP discovery...")
-    # Discover IPv4 and IPv6 addresses
-    if "ipv4" in conf["sources"]:
-        logging.debug("Trying to discover IPv4 address...")
-        ipv4_address = get_ipv4_address(conf["sources"]["ipv4"])
-        if ipv4_address:
-            logging.info(f"Discovered IPv4 address: {ipv4_address}")
-    else:
-        ipv4_address = None
-    if "ipv6" in conf["sources"]:
-        logging.debug("Trying to discover IPv6 prefix...")
-        ipv6_prefix = get_ipv6_prefix(conf["sources"]["ipv6"])
-        if ipv6_prefix:
-            logging.info(f"Discovered IPv6 prefix: {ipv6_prefix}")
-    else:
-        ipv6_prefix = None
+# Discover IPs
+logging.info(f"{datetime.now()} Starting IP discovery...")
+# Discover IPv4 and IPv6 addresses
+if "ipv4" in conf["sources"]:
+    logging.debug("Trying to discover IPv4 address...")
+    ipv4_address = get_ipv4_address(conf["sources"]["ipv4"])
+    if ipv4_address:
+        logging.info(f"Discovered IPv4 address: {ipv4_address}")
+else:
+    ipv4_address = None
+if "ipv6" in conf["sources"]:
+    logging.debug("Trying to discover IPv6 prefix...")
+    ipv6_prefix = get_ipv6_prefix(conf["sources"]["ipv6"])
+    if ipv6_prefix:
+        logging.info(f"Discovered IPv6 prefix: {ipv6_prefix}")
+else:
+    ipv6_prefix = None
 
-    # Create desired state
-    desired_records = {}
-    for domain in domain_ids:
-        desired_records[domain] = []
-    for record in conf["dns_records"]:
-        if record["ipv4"] and ipv4_address:
+# Create desired state
+desired_records = {}
+for domain in domain_ids:
+    desired_records[domain] = []
+for record in conf["dns_records"]:
+    if record["ipv4"] and ipv4_address:
+        domain = get_base_domain(record["hostname"])
+        desired_records[domain].append({"name": record["hostname"] + '.',
+                                        "value": str(ipv4_address),
+                                        "type": "A",
+                                        "ttl": args.ttl
+                                        })
+    if record["ipv6"] and ipv6_prefix:
+        ipv6_address = calculate_ipv6_address(ipv6_prefix, record)
+        if ipv6_address:
             domain = get_base_domain(record["hostname"])
             desired_records[domain].append({"name": record["hostname"] + '.',
-                                            "value": str(ipv4_address),
-                                            "type": "A",
+                                            "value": str(ipv6_address),
+                                            "type": "AAAA",
                                             "ttl": args.ttl
                                             })
-        if record["ipv6"] and ipv6_prefix:
-            ipv6_address = calculate_ipv6_address(ipv6_prefix, record)
-            if ipv6_address:
-                domain = get_base_domain(record["hostname"])
-                desired_records[domain].append({"name": record["hostname"] + '.',
-                                                "value": str(ipv6_address),
-                                                "type": "AAAA",
-                                                "ttl": args.ttl
-                                                })
-    # Get current state
-    current_records = {}
-    for domain in domain_ids:
-        current_records[domain] = get_route53_domain_records(domain_id=domain_ids[domain])
+# Get current state
+current_records = {}
+for domain in domain_ids:
+    current_records[domain] = get_route53_domain_records(domain_id=domain_ids[domain])
 
-    # Prepare changes
-    record_changes = {}
-    for domain in domain_ids:
-        record_changes[domain] = []
-        for desired_record in desired_records[domain]:
-            exists, updated = needs_update(
-                desired_record, current_records[domain])
-            logging.debug(
-                f"{desired_record['type']} Record '{desired_record['name']}' checked with results: exists={exists} updated={updated}")
-            if exists and updated:
-                logging.info("OK: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+# Prepare changes
+record_changes = {}
+for domain in domain_ids:
+    record_changes[domain] = []
+    for desired_record in desired_records[domain]:
+        exists, updated = needs_update(
+            desired_record, current_records[domain])
+        logging.debug(
+            f"{desired_record['type']} Record '{desired_record['name']}' checked with results: exists={exists} updated={updated}")
+        if exists and updated:
+            logging.info("OK: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+                                                  desired_record['type'], desired_record['value']))
+        elif not exists:
+            logging.info("Adding: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
                                                       desired_record['type'], desired_record['value']))
-            elif not exists:
-                logging.info("Adding: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
-                                                          desired_record['type'], desired_record['value']))
-                change = create_route53_change('CREATE', desired_record)
-                record_changes[domain].append(change)
-            elif not updated:
-                logging.info("Changing: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
-                                                            desired_record['type'], desired_record['value']))
-                change = create_route53_change('UPSERT', desired_record)
-                record_changes[domain].append(change)
+            change = create_route53_change('CREATE', desired_record)
+            record_changes[domain].append(change)
+        elif not updated:
+            logging.info("Changing: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+                                                        desired_record['type'], desired_record['value']))
+            change = create_route53_change('UPSERT', desired_record)
+            record_changes[domain].append(change)
 
-    # Apply changes
-    for domain in domain_ids:
-        if record_changes[domain]:
-            logging.info(f"Applying changes for domain {domain} ...")
-            change_batch = create_route53_change_batch(record_changes[domain])
-            result = route53.change_resource_record_sets(
-                HostedZoneId=domain_ids[domain], ChangeBatch=change_batch)
+# Apply changes
+for domain in domain_ids:
+    if record_changes[domain]:
+        logging.info(f"Applying changes for domain {domain} ...")
+        change_batch = create_route53_change_batch(record_changes[domain])
+        result = route53.change_resource_record_sets(
+            HostedZoneId=domain_ids[domain], ChangeBatch=change_batch)
 
-    logging.info(f"Sleeping for {args.delay} seconds...")
-    sleep(args.delay)
+logging.info(f"Goodbye.")
