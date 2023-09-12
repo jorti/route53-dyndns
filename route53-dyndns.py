@@ -42,8 +42,7 @@ def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
                 content = f.readline().rstrip()
             return ip_address(content)
         except OSError as e:
-            logging.error(
-                f"Error reading IPv4 address from file {source['file']}: {e}")
+            print(f"Error reading IPv4 address from file {source['file']}: {e}")
     elif source["type"] == "url":
         curl_cmd = [shutil.which('curl'), '--ipv4',
                     '--silent', '--max-time', '10', source["url"]]
@@ -52,11 +51,11 @@ def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
             output = check_output(curl_cmd)
             return ip_address(output.decode('utf-8').strip())
         except SubprocessError as e:
-            logging.error("Error getting IPv4 address using curl:")
-            logging.error(curl_cmd)
-            logging.error(e)
+            print("Error getting IPv4 address using curl:")
+            print(curl_cmd)
+            print(e)
     else:
-        logging.error("Unknown IPv4 source type'{}'".format(source["type"]))
+        print("Unknown IPv4 source type'{}'".format(source["type"]))
         raise ValueError
 
 
@@ -74,20 +73,17 @@ def get_ipv6_prefix(source: dict) -> Optional[IPv6Network]:
                 address["addr"] + '/' + prefix, strict=False)
             if ipv6_network.is_global and ipv6_network.prefixlen <= 64:
                 return ipv6_network
-        logging.error(
-            f"Error reading IPv6 prefix from network interface {source['interface']}")
+        print(f"Error reading IPv6 prefix from network interface {source['interface']}")
     elif source["type"] == "file":
         try:
             with open(source["file"], "r") as f:
                 content = f.readline().rstrip()
             return ip_network(content)
         except OSError as e:
-            logging.error(
-                f"Error reading IPv6 prefix from file {source['file']}: {e}")
+            print(f"Error reading IPv6 prefix from file {source['file']}: {e}")
     elif source["type"] == "url":
         if "prefixlen" not in source.keys():
-            logging.error(
-                "You need to specify 'prefixlen' for the IPv6 URL method")
+            print("You need to specify 'prefixlen' for the IPv6 URL method")
             sys.exit(1)
         curl_cmd = [shutil.which('curl'), '--ipv6',
                     '--silent', '--max-time', '10', source["url"]]
@@ -96,11 +92,11 @@ def get_ipv6_prefix(source: dict) -> Optional[IPv6Network]:
             output = check_output(curl_cmd).decode('utf-8')
             return ip_network(output.strip() + '/' + str(source["prefixlen"]), strict=False)
         except SubprocessError as e:
-            logging.error("Error getting IPv6 prefix using curl:")
-            logging.error(curl_cmd)
-            logging.error(e)
+            print("Error getting IPv6 prefix using curl:")
+            print(curl_cmd)
+            print(e)
     else:
-        logging.error("Unknown IPv6 source type '{}'".format(source["type"]))
+        print("Unknown IPv6 source type '{}'".format(source["type"]))
         raise ValueError
 
 
@@ -109,8 +105,7 @@ def calculate_ipv6_address(prefix: IPv6Network, dns_record_conf: dict) -> Option
         target_subnet = get_ipv6_prefix(
             {"type": "interface", "interface": dns_record_conf["ipv6_subnet_interface"]})
         if not target_subnet:
-            logging.error(
-                f"Cannot calculate IPv6 address using interface {dns_record_conf['ipv6_subnet_interface']}")
+            print(f"Cannot calculate IPv6 address using interface {dns_record_conf['ipv6_subnet_interface']}")
             return
         return target_subnet[int(str(dns_record_conf["ipv6_host_addr"]), 16)]
     elif "ipv6_subnet_hint" in dns_record_conf.keys():
@@ -119,17 +114,15 @@ def calculate_ipv6_address(prefix: IPv6Network, dns_record_conf: dict) -> Option
             target_subnet = subnets[int(
                 str(dns_record_conf["ipv6_subnet_hint"]), 16)]
         else:
-            logging.warning(
-                "IPv6 Prefix length is {}, ignoring ipv6_subnet_hint".format(prefix.prefixlen))
+            print("IPv6 Prefix length is {}, ignoring ipv6_subnet_hint".format(prefix.prefixlen))
             target_subnet = prefix
         return target_subnet[int(str(dns_record_conf["ipv6_host_addr"]), 16)]
     else:
-        logging.error(
-            f"Cannot calculate IPv6 address with dns_record_conf={dns_record_conf}")
+        print(f"Cannot calculate IPv6 address with dns_record_conf={dns_record_conf}")
 
 
 def finish(_signo, _stack_frame):
-    logging.info("Goodbye")
+    print("Goodbye")
     sys.exit(0)
 
 
@@ -194,6 +187,13 @@ def get_route53_domain_records(domain_id, **kwargs):
     return records
 
 
+def find_record_in_list(record_list, wanted_name, wanted_type):
+    """Find a specific record in a list of records"""
+    for record in record_list:
+        if record['Name'] == wanted_name and record['Type'] == wanted_type:
+            return record
+
+
 parser = argparse.ArgumentParser(description='Route 53 DynDNS')
 parser.add_argument("--conf-file", "-c",
                     default="route53-dyndns.yml", help="Configuration file")
@@ -212,19 +212,18 @@ try:
     with open(args.conf_file, 'r') as conf_file:
         conf = yaml.load(conf_file, Loader=yaml.SafeLoader)
 except OSError as e:
-    logging.critical(
-        f"Error opening configuration file '{args.conf_file}': {e}")
+    print(f"Error opening configuration file '{args.conf_file}': {e}")
     sys.exit(1)
 
 # Config file validations
 if 'sources' not in conf:
-    logging.critical("'sources' is not defined in the configuration file")
+    print("'sources' is not defined in the configuration file")
     sys.exit(1)
 if 'dns_records' not in conf:
-    logging.critical("'dns_records' is not defined in the configuration file")
+    print("'dns_records' is not defined in the configuration file")
     sys.exit(1)
 if 'ipv4' not in conf['sources'] and 'ipv6' not in conf['sources']:
-    logging.critical("Either 'ipv4' or 'ipv6' sources have to be configured")
+    print("Either 'ipv4' or 'ipv6' sources have to be configured")
     sys.exit(1)
 
 if args.aws_conf_file:
@@ -243,20 +242,20 @@ for domain in domains:
     domain_ids[domain] = hosted_zones['HostedZones'][0]['Id']
 
 # Discover IPs
-logging.info(f"{datetime.now()} Starting IP discovery...")
+print(f"{datetime.now()} Starting IP discovery...")
 # Discover IPv4 and IPv6 addresses
 if "ipv4" in conf["sources"]:
-    logging.debug("Trying to discover IPv4 address...")
+    print("Trying to discover IPv4 address...")
     ipv4_address = get_ipv4_address(conf["sources"]["ipv4"])
     if ipv4_address:
-        logging.info(f"Discovered IPv4 address: {ipv4_address}")
+        print(f"Discovered IPv4 address: {ipv4_address}")
 else:
     ipv4_address = None
 if "ipv6" in conf["sources"]:
-    logging.debug("Trying to discover IPv6 prefix...")
+    print("Trying to discover IPv6 prefix...")
     ipv6_prefix = get_ipv6_prefix(conf["sources"]["ipv6"])
     if ipv6_prefix:
-        logging.info(f"Discovered IPv6 prefix: {ipv6_prefix}")
+        print(f"Discovered IPv6 prefix: {ipv6_prefix}")
 else:
     ipv6_prefix = None
 
@@ -296,25 +295,32 @@ for domain in domain_ids:
         logging.debug(
             f"{desired_record['type']} Record '{desired_record['name']}' checked with results: exists={exists} updated={updated}")
         if exists and updated:
-            logging.info("OK: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
-                                                  desired_record['type'], desired_record['value']))
+            print("Entry OK:")
+            print("%26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+                                       desired_record['type'], desired_record['value']))
         elif not exists:
-            logging.info("Adding: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
-                                                      desired_record['type'], desired_record['value']))
+            print("Adding new entry:")
+            print("%26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+                                       desired_record['type'], desired_record['value']))
             change = create_route53_change('CREATE', desired_record)
             record_changes[domain].append(change)
         elif not updated:
-            logging.info("Changing: %26s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
-                                                        desired_record['type'], desired_record['value']))
+            current_record = find_record_in_list(current_records[domain], desired_record['name'],
+                                                 desired_record['type'])
+            print("Modifying existing entry:")
+            print("OLD: %21s %6s %4s %s" % (current_record['Name'], current_record['TTL'],
+                                              current_record['Type'], current_record['ResourceRecords'][0]['Value']))
+            print("NEW: %21s %6s %4s %s" % (desired_record['name'], desired_record['ttl'],
+                                              desired_record['type'], desired_record['value']))
             change = create_route53_change('UPSERT', desired_record)
             record_changes[domain].append(change)
 
 # Apply changes
 for domain in domain_ids:
     if record_changes[domain]:
-        logging.info(f"Applying changes for domain {domain} ...")
+        print(f"Applying changes to domain {domain} ...")
         change_batch = create_route53_change_batch(record_changes[domain])
         result = route53.change_resource_record_sets(
             HostedZoneId=domain_ids[domain], ChangeBatch=change_batch)
 
-logging.info(f"Goodbye.")
+print("Goodbye.")
