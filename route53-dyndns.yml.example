@@ -1,4 +1,5 @@
 # Sources of the public IPv4 address and/or IPv6 delegated prefix
+TTL: 60 # TTL for all created records
 sources:
   ipv4:
     # There are 3 methods of getting the IPv4 address:

@@ -24,7 +24,6 @@ import boto3
 from ipaddress import IPv4Address, IPv6Address, IPv6Network, ip_address, ip_network
 import netifaces
 from subprocess import check_output, SubprocessError
-from signal import signal, SIGINT, SIGTERM
 import logging
 from typing import Optional
 from datetime import datetime
@@ -120,11 +119,6 @@ def calculate_ipv6_address(prefix: IPv6Network, dns_record_conf: dict) -> Option
         print(f"Cannot calculate IPv6 address with dns_record_conf={dns_record_conf}")
 
 
-def finish(_signo, _stack_frame):
-    print("Goodbye")
-    sys.exit(0)
-
-
 def get_base_domain(fqdn: str) -> str:
     return '.'.join(fqdn.split('.')[-2:])
 
@@ -165,25 +159,25 @@ def create_route53_change_batch(changed_records: list) -> dict:
             'Changes': changed_records}
 
 
-def get_route53_domain_records(domain_id: str, **kwargs) -> list:
+def get_route53_domain_records(domain_id: str, client, **kwargs) -> list:
     if 'StartRecordName' in kwargs and 'StartRecordType' in kwargs and 'StartRecordIdentifier' not in kwargs:
-        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id,
-                                                                 StartRecordName=kwargs['StartRecordName'],
-                                                                 StartRecordType=kwargs['StartRecordType'])
+        resource_record_sets = client.list_resource_record_sets(HostedZoneId=domain_id,
+                                                                StartRecordName=kwargs['StartRecordName'],
+                                                                StartRecordType=kwargs['StartRecordType'])
     elif 'StartRecordName' in kwargs and 'StartRecordType' in kwargs and 'StartRecordIdentifier' in kwargs:
-        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id,
-                                                                 StartRecordName=kwargs['StartRecordName'],
-                                                                 StartRecordType=kwargs['StartRecordType'],
-                                                                 StartRecordIdentifier=kwargs['StartRecordIdentifier'])
+        resource_record_sets = client.list_resource_record_sets(HostedZoneId=domain_id,
+                                                                StartRecordName=kwargs['StartRecordName'],
+                                                                StartRecordType=kwargs['StartRecordType'],
+                                                                StartRecordIdentifier=kwargs['StartRecordIdentifier'])
     else:
-        resource_record_sets = route53.list_resource_record_sets(HostedZoneId=domain_id)
+        resource_record_sets = client.list_resource_record_sets(HostedZoneId=domain_id)
     records = resource_record_sets['ResourceRecordSets']
     if resource_record_sets['IsTruncated']:
         next_query_args = {'StartRecordName': resource_record_sets['NextRecordName'],
                            'StartRecordType': resource_record_sets['NextRecordType']}
         if 'StartRecordIdentifier' in resource_record_sets:
             next_query_args['StartRecordIdentifier'] = resource_record_sets['NextRecordIdentifier']
-        records = records + get_route53_domain_records(domain_id=domain_id, **next_query_args)
+        records = records + get_route53_domain_records(domain_id, client, **next_query_args)
     return records
 
 
@@ -194,7 +188,7 @@ def find_record_in_list(record_list: list, wanted_name: str, wanted_type: str) -
             return record
 
 
-def get_all_base_domains() -> dict:
+def get_all_base_domains(conf: dict, client) -> dict:
     """Get all the base domains and their Route 53 IDs from the list of configured records"""
     all_domains = []
     domain_ids = {}
@@ -203,14 +197,14 @@ def get_all_base_domains() -> dict:
         if domain not in all_domains:
             all_domains.append(domain)
     for domain in all_domains:
-        hosted_zones = route53.list_hosted_zones_by_name(DNSName=domain)
+        hosted_zones = client.list_hosted_zones_by_name(DNSName=domain)
         domain_ids[domain] = {'Id': hosted_zones['HostedZones'][0]['Id'],
                               'Name': domain
                               }
     return domain_ids
 
 
-def discover_ips() -> dict:
+def discover_ips(conf) -> dict:
     """Discover IPv4 address and IPv6 prefix"""
     print(f"{datetime.now()} Starting IP discovery...")
     if "ipv4" in conf["sources"]:
@@ -232,7 +226,7 @@ def discover_ips() -> dict:
             }
 
 
-def generate_desired_records() -> dict:
+def generate_desired_records(conf: dict, current_ips: dict) -> dict:
     """Generate list of desired records grouped by domain"""
     records = {}
     # Create domain keys
@@ -247,7 +241,7 @@ def generate_desired_records() -> dict:
             records[domain].append({"Name": record["hostname"] + '.',
                                     "ResourceRecords": [{"Value": str(current_ips['ipv4'])}],
                                     "Type": "A",
-                                    "TTL": args.ttl
+                                    "TTL": conf['TTL']
                                     })
         if record["ipv6"] and 'ipv6' in current_ips:
             ipv6_address = calculate_ipv6_address(current_ips['ipv6'], record)
@@ -256,16 +250,16 @@ def generate_desired_records() -> dict:
                 records[domain].append({"Name": record["hostname"] + '.',
                                         "ResourceRecords": [{"Value": str(ipv6_address)}],
                                         "Type": "AAAA",
-                                        "TTL": args.ttl
+                                        "TTL": conf['TTL']
                                         })
     return records
 
 
-def get_current_records() -> dict:
+def get_current_records(domains, client) -> dict:
     """Get the current values of the configured records"""
     records = {}
     for domain in domains:
-        records[domain] = get_route53_domain_records(domain_id=domains[domain]['Id'])
+        records[domain] = get_route53_domain_records(domains[domain]['Id'], client)
     return records
 
 
@@ -274,7 +268,7 @@ def print_record_change(modification_flag: str, record: dict):
                                   record['Type'], record['ResourceRecords'][0]['Value']))
 
 
-def generate_changes() -> dict:
+def generate_changes(domains: dict, desired_records: dict, current_records: dict) -> dict:
     """Generate lists of changes grouped by domain"""
     record_changes = {}
     print("Generating change batch:")
@@ -301,56 +295,62 @@ def generate_changes() -> dict:
     return record_changes
 
 
-def apply_changes():
+def apply_changes(domains: dict, changes: dict, client):
     """Submit changes to Route 53"""
     for domain in domains:
         if domain in changes and len(changes[domain]) > 0:
             print(f"Submitting changes to domain {domain}...")
             change_batch = create_route53_change_batch(changes[domain])
-            route53.change_resource_record_sets(HostedZoneId=domains[domain]['Id'], ChangeBatch=change_batch)
+            client.change_resource_record_sets(HostedZoneId=domains[domain]['Id'], ChangeBatch=change_batch)
 
 
-parser = argparse.ArgumentParser(description='Route 53 DynDNS')
-parser.add_argument("--conf-file", "-c",
-                    default="/etc/route53-dyndns/route53-dyndns.yml", help="Configuration file")
-parser.add_argument("--aws-conf-file", help="AWS configuration file")
-parser.add_argument("--ttl", default=60, type=int,
-                    help="TTL for DNS records (default: 60 seconds)")
-parser.add_argument("--log-level", default="INFO", help="Log level",
-                    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-args = parser.parse_args()
-log_numeric_level = getattr(logging, args.log_level.upper(), None)
-logging.basicConfig(level=log_numeric_level)
-signal(SIGTERM, finish)
-signal(SIGINT, finish)
+def load_config(file: str) -> dict:
+    """Load the configuration from the config file"""
+    try:
+        with open(file, 'r') as conf_file:
+            loaded_config = yaml.load(conf_file, Loader=yaml.SafeLoader)
+    except OSError as e:
+        print(f"Error opening configuration file '{file}': {e}")
+        sys.exit(1)
+    # Config file validations
+    if 'sources' not in loaded_config:
+        print("'sources' is not defined in the configuration file")
+        sys.exit(1)
+    if 'dns_records' not in loaded_config:
+        print("'dns_records' is not defined in the configuration file")
+        sys.exit(1)
+    if 'ipv4' not in loaded_config['sources'] and 'ipv6' not in loaded_config['sources']:
+        print("Either 'ipv4' or 'ipv6' sources have to be configured")
+        sys.exit(1)
+    return loaded_config
 
-try:
-    with open(args.conf_file, 'r') as conf_file:
-        conf = yaml.load(conf_file, Loader=yaml.SafeLoader)
-except OSError as e:
-    print(f"Error opening configuration file '{args.conf_file}': {e}")
-    sys.exit(1)
 
-# Config file validations
-if 'sources' not in conf:
-    print("'sources' is not defined in the configuration file")
-    sys.exit(1)
-if 'dns_records' not in conf:
-    print("'dns_records' is not defined in the configuration file")
-    sys.exit(1)
-if 'ipv4' not in conf['sources'] and 'ipv6' not in conf['sources']:
-    print("Either 'ipv4' or 'ipv6' sources have to be configured")
-    sys.exit(1)
+def main():
+    parser = argparse.ArgumentParser(description='Route 53 DynDNS')
+    parser.add_argument("--conf-file", "-c",
+                        default="/etc/route53-dyndns/route53-dyndns.yml", help="Configuration file")
+    parser.add_argument("--aws-conf-file", help="AWS configuration file")
+    parser.add_argument("--log-level", default="INFO", help="Log level",
+                        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+    args = parser.parse_args()
+    log_numeric_level = getattr(logging, args.log_level.upper(), None)
+    logging.basicConfig(level=log_numeric_level)
 
-if args.aws_conf_file:
-    os.environ['AWS_CONFIG_FILE'] = args.aws_conf_file
-route53 = boto3.client('route53')
+    conf = load_config(args.conf_file)
 
-domains = get_all_base_domains()
-current_ips = discover_ips()
-desired_records = generate_desired_records()
-current_records = get_current_records()
-changes = generate_changes()
-apply_changes()
+    if args.aws_conf_file:
+        os.environ['AWS_CONFIG_FILE'] = args.aws_conf_file
+    route53_client = boto3.client('route53')
 
-print("Goodbye.")
+    domains = get_all_base_domains(conf, route53_client)
+    current_ips = discover_ips(conf)
+    desired_records = generate_desired_records(conf, current_ips)
+    current_records = get_current_records(domains, route53_client)
+    changes = generate_changes(domains, desired_records, current_records)
+    apply_changes(domains, changes, route53_client)
+
+    print("Goodbye.")
+
+
+if __name__ == '__main__':
+    sys.exit(main())
