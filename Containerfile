@@ -11,4 +11,4 @@ COPY route53-dyndns.py /usr/local/bin/route53-dyndns.py
 LABEL maintainer="Juan Orti Alcaine <jortialc@redhat.com>" \
       description="Route 53 DynDNS"
 USER dyndns:dyndns
-ENTRYPOINT ["/usr/local/bin/route53-dyndns.py", "--conf-file=/etc/route53-dyndns/route53-dyndns.yml"]
+ENTRYPOINT ["/usr/local/bin/route53-dyndns.py"]

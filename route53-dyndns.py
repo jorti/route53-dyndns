@@ -312,7 +312,7 @@ def apply_changes():
 
 parser = argparse.ArgumentParser(description='Route 53 DynDNS')
 parser.add_argument("--conf-file", "-c",
-                    default="route53-dyndns.yml", help="Configuration file")
+                    default="/etc/route53-dyndns/route53-dyndns.yml", help="Configuration file")
 parser.add_argument("--aws-conf-file", help="AWS configuration file")
 parser.add_argument("--ttl", default=60, type=int,
                     help="TTL for DNS records (default: 60 seconds)")
