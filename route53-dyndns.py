@@ -190,6 +190,7 @@ def find_record_in_list(record_list: list, wanted_name: str, wanted_type: str) -
 
 def get_all_base_domains(conf: dict, client) -> dict:
     """Get all the base domains and their Route 53 IDs from the list of configured records"""
+    print("Looking for configured domains...")
     all_domains = []
     domain_ids = {}
     for record in conf['dns_records']:
@@ -198,6 +199,7 @@ def get_all_base_domains(conf: dict, client) -> dict:
             all_domains.append(domain)
     for domain in all_domains:
         hosted_zones = client.list_hosted_zones_by_name(DNSName=domain)
+        print(f"Domain: {domain}  Id: {hosted_zones['HostedZones'][0]['Id']}")
         domain_ids[domain] = {'Id': hosted_zones['HostedZones'][0]['Id'],
                               'Name': domain
                               }
@@ -206,12 +208,13 @@ def get_all_base_domains(conf: dict, client) -> dict:
 
 def discover_ips(conf) -> dict:
     """Discover IPv4 address and IPv6 prefix"""
-    print(f"{datetime.now()} Starting IP discovery...")
     if "ipv4" in conf["sources"]:
         print("Trying to discover IPv4 address...")
         ipv4_address = get_ipv4_address(conf["sources"]["ipv4"])
         if ipv4_address:
             print(f"Discovered IPv4 address: {ipv4_address}")
+        else:
+            print("No IPv4 address discovered.")
     else:
         ipv4_address = None
     if "ipv6" in conf["sources"]:
@@ -219,6 +222,8 @@ def discover_ips(conf) -> dict:
         ipv6_prefix = get_ipv6_prefix(conf["sources"]["ipv6"])
         if ipv6_prefix:
             print(f"Discovered IPv6 prefix: {ipv6_prefix}")
+        else:
+            print("No IPv6 prefix discovered.")
     else:
         ipv6_prefix = None
     return {'ipv4': ipv4_address,
@@ -271,7 +276,7 @@ def print_record_change(modification_flag: str, record: dict):
 def generate_changes(domains: dict, desired_records: dict, current_records: dict) -> dict:
     """Generate lists of changes grouped by domain"""
     record_changes = {}
-    print("Generating change batch:")
+    print("Generating change set:")
     for domain in domains:
         record_changes[domain] = []
         for desired_record in desired_records[domain]:
@@ -302,6 +307,8 @@ def apply_changes(domains: dict, changes: dict, client):
             print(f"Submitting changes to domain {domain}...")
             change_batch = create_route53_change_batch(changes[domain])
             client.change_resource_record_sets(HostedZoneId=domains[domain]['Id'], ChangeBatch=change_batch)
+        else:
+            print(f"No changes for domain {domain}, skipping...")
 
 
 def load_config(file: str) -> dict:
@@ -326,6 +333,7 @@ def load_config(file: str) -> dict:
 
 
 def main():
+    print(f"{datetime.now()} - Starting update of dynamic IPs")
     parser = argparse.ArgumentParser(description='Route 53 DynDNS')
     parser.add_argument("--conf-file", "-c",
                         default="/etc/route53-dyndns/route53-dyndns.yml", help="Configuration file")
