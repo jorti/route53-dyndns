@@ -24,7 +24,6 @@ import boto3
 from ipaddress import IPv4Address, IPv6Address, IPv6Network, ip_address, ip_network
 import netifaces
 from subprocess import check_output, SubprocessError
-import logging
 from typing import Optional
 from datetime import datetime
 
@@ -45,7 +44,6 @@ def get_ipv4_address(source: dict) -> Optional[IPv4Address]:
         curl_cmd = [shutil.which('curl'), '--ipv4',
                     '--silent', '--max-time', '10', source["url"]]
         try:
-            logging.debug(f"Running command {curl_cmd}")
             output = check_output(curl_cmd)
             return ip_address(output.decode('utf-8').strip())
         except SubprocessError as exception:
@@ -86,7 +84,6 @@ def get_ipv6_prefix(source: dict) -> Optional[IPv6Network]:
         curl_cmd = [shutil.which('curl'), '--ipv6',
                     '--silent', '--max-time', '10', source["url"]]
         try:
-            logging.debug(f"Running command {curl_cmd}")
             output = check_output(curl_cmd).decode('utf-8')
             return ip_network(output.strip() + '/' + str(source["prefixlen"]), strict=False)
         except SubprocessError as exception:
@@ -282,8 +279,6 @@ def generate_changes(domains: dict, desired_records: dict, current_records: dict
         for desired_record in desired_records[domain]:
             exists, updated = needs_update(
                 desired_record, current_records[domain])
-            logging.debug(
-                f"{desired_record['Type']} Record '{desired_record['Name']}' checked with results: exists={exists} updated={updated}")
             if exists and updated:
                 print_record_change("  ", desired_record)
             elif not exists:
@@ -338,11 +333,7 @@ def main():
     parser.add_argument("--conf-file", "-c",
                         default="/etc/route53-dyndns/route53-dyndns.yml", help="Configuration file")
     parser.add_argument("--aws-conf-file", help="AWS configuration file")
-    parser.add_argument("--log-level", default="INFO", help="Log level",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     args = parser.parse_args()
-    log_numeric_level = getattr(logging, args.log_level.upper(), None)
-    logging.basicConfig(level=log_numeric_level)
 
     conf = load_config(args.conf_file)
 
