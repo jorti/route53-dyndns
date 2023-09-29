@@ -127,8 +127,7 @@ def needs_update(desired: dict, current: list) -> (bool, bool):
     exists = False
     updated = False
     for record in current:
-        decoded_name = record['Name'].encode('utf-8').decode('unicode_escape')
-        if decoded_name == desired['Name'] and \
+        if record['Name'] == desired['Name'] and \
                 record['Type'] == desired['Type']:
             exists = True
             if record['TTL'] == desired['TTL'] and \
@@ -240,7 +239,7 @@ def generate_desired_records(conf: dict, current_ips: dict) -> dict:
     for record in conf['dns_records']:
         if record["ipv4"] and 'ipv4' in current_ips:
             domain = get_base_domain(record["hostname"])
-            records[domain].append({"Name": record["hostname"] + '.',
+            records[domain].append({"Name": escape_record_name(record["hostname"] + '.'),
                                     "ResourceRecords": [{"Value": str(current_ips['ipv4'])}],
                                     "Type": "A",
                                     "TTL": conf['TTL']
@@ -249,7 +248,7 @@ def generate_desired_records(conf: dict, current_ips: dict) -> dict:
             ipv6_address = calculate_ipv6_address(current_ips['ipv6'], record)
             if ipv6_address:
                 domain = get_base_domain(record["hostname"])
-                records[domain].append({"Name": record["hostname"] + '.',
+                records[domain].append({"Name": escape_record_name(record["hostname"] + '.'),
                                         "ResourceRecords": [{"Value": str(ipv6_address)}],
                                         "Type": "AAAA",
                                         "TTL": conf['TTL']
@@ -266,7 +265,7 @@ def get_current_records(domains, client) -> dict:
 
 
 def print_record_change(modification_flag: str, record: dict):
-    print("%s %26s %6s %4s %s" % (modification_flag, record['Name'], record['TTL'],
+    print("%s %26s %6s %4s %s" % (modification_flag, unescape_record_name(record['Name']), record['TTL'],
                                   record['Type'], record['ResourceRecords'][0]['Value']))
 
 
@@ -293,6 +292,16 @@ def generate_changes(domains: dict, desired_records: dict, current_records: dict
                 change = create_route53_change('UPSERT', desired_record)
                 record_changes[domain].append(change)
     return record_changes
+
+
+def escape_record_name(record_name: str) -> str:
+    """Convert a record name string to the escaped form. Needed for example for wildcard domain names"""
+    return record_name.translate(str.maketrans({'*': r'\052'}))
+
+
+def unescape_record_name(record_name: str) -> str:
+    """Convert an escaped record name string to the unescaped form. Needed for example for wildcard domain names"""
+    return record_name.encode().decode('unicode_escape')
 
 
 def apply_changes(domains: dict, changes: dict, client):
