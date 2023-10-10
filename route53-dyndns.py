@@ -204,11 +204,13 @@ def get_all_base_domains(conf: dict, client) -> dict:
 
 def discover_ips(conf) -> dict:
     """Discover IPv4 address and IPv6 prefix"""
+    discovered_ips = {}
     if "ipv4" in conf["sources"]:
         print("Trying to discover IPv4 address...")
         ipv4_address = get_ipv4_address(conf["sources"]["ipv4"])
         if ipv4_address:
             print(f"Discovered IPv4 address: {ipv4_address}")
+            discovered_ips['ipv4'] = ipv4_address
         else:
             print("No IPv4 address discovered.")
     else:
@@ -218,13 +220,12 @@ def discover_ips(conf) -> dict:
         ipv6_prefix = get_ipv6_prefix(conf["sources"]["ipv6"])
         if ipv6_prefix:
             print(f"Discovered IPv6 prefix: {ipv6_prefix}")
+            discovered_ips['ipv6'] = ipv6_prefix
         else:
             print("No IPv6 prefix discovered.")
     else:
         ipv6_prefix = None
-    return {'ipv4': ipv4_address,
-            'ipv6': ipv6_prefix
-            }
+    return discovered_ips
 
 
 def generate_desired_records(conf: dict, current_ips: dict) -> dict:
