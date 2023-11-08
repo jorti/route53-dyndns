@@ -1,5 +1,5 @@
 ARG FEDORA_ARCH=x86_64
-ARG FEDORA_VERSION=38
+ARG FEDORA_VERSION=39
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION}-${FEDORA_ARCH}
 
 RUN dnf update -y --setopt=install_weak_deps=False --nodocs && \
